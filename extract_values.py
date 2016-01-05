@@ -41,6 +41,7 @@ import glob
 from itertools import cycle
 import math
 import numpy as np
+
 outFormat = 'ESRI Shapefile'
 
 def mapToPixel( mX, mY, geoTransform ):
@@ -117,7 +118,7 @@ def invertGeoTransform( geoTransform ):
 def usage():
   '''Show usage synopsis.
   '''
-  print 'Usage: extract_values.py [-r] [-g] [-f] point_shapefile [raster_file(s)] [-d directory_with_rasters] [-rl list,of,rasters] [-e extension]'
+  print 'Usage: extract_values.py [-q] [-r] [-g] [-f] point_shapefile [raster_file(s)] [-d directory_with_rasters] [-rl list,of,rasters] [-e extension]'
   sys.exit( 1 )
 
 def fileNamesToFileInfos( names ):
@@ -150,7 +151,7 @@ def createFields( inLayer, infos ):
       fieldDef.SetWidth( 18 )
       fieldDef.SetPrecision( 8 )
       if fields_descript: fields_csv.write(i.fileBaseName + ';' + shortName + ';1' + '\n')
-      if create_CSV:
+      if create_csv:
         extract_csv.write(';'+i.fileBaseName)
       else:  
         if inLayer.CreateField( fieldDef ) != 0:
@@ -163,7 +164,7 @@ def createFields( inLayer, infos ):
         fieldDef.SetWidth( 18 )
         fieldDef.SetPrecision( 8 )
         if fields_descript: fields_csv.write(i.fileBaseName + ';' + shortName  + str( b + 1 ) + ';' + str(b) + '\n')
-        if create_CSV:
+        if create_csv:
           extract_csv.write(';'+i.fileBaseName + str(b))
         else:  
           if inLayer.CreateField( fieldDef ) != 0:
@@ -323,12 +324,11 @@ if __name__ == '__main__':
   needTransform = False
   gdalalloc = False
   fields_descript = False
-  create_CSV = False
+  create_csv = False
   rasterPaths2 = None
+  quiet = False
   
   gdal.AllRegister()
-
-  print 'Found GDAL version:', gdalInfo().version(), '\n'
 
   formats = gdalInfo().getSupportedRasters()
 ###  print formats
@@ -346,10 +346,12 @@ if __name__ == '__main__':
       needTransform = True
     elif arg == '-g':
       gdalalloc = True
+    elif arg == '-q':
+      quiet = True
     elif arg == '-f':
       fields_descript = True
     elif arg == '-c':
-      create_CSV = True  
+      create_csv = True  
     elif arg == '-rl':
         inRasters.extend( args[ i + 1].split(',') )
     elif arg == '-d':
@@ -369,7 +371,11 @@ if __name__ == '__main__':
         ext = args[ i ]
     elif inShapeName is None:
       inShapeName = arg
+    elif arg != '-d' and arg != '-rl':
+      inRasters.append(args[i])
     i += 1
+  
+  if not quiet: print 'Found GDAL version:', gdalInfo().version(), '\n'
   
   if inShapeName is None:
     print("No point shapefile was specified. Nothing to do.")
@@ -379,7 +385,7 @@ if __name__ == '__main__':
     fields_csv = open(inShapeName.replace('.shp','_fields.csv'),'wb')
     fields_csv.write('RASTER;NEWFIELD;BAND\n')
 
-  if create_CSV: 
+  if create_csv: 
     extract_csv = open(inShapeName.replace('.shp','_extract.csv'),'wb')
 
   #-d is set
@@ -421,7 +427,7 @@ if __name__ == '__main__':
     for i in range(layerDefinition.GetFieldCount()):
          fields_csv.write(layerDefinition.GetFieldDefn(i).GetName() + ';' + layerDefinition.GetFieldDefn(i).GetName() + ';1\n')
 
-  if create_CSV:
+  if create_csv:
     extract_csv.write('FID')    
   featCount = inLayer.GetFeatureCount()
   layerCRS = inLayer.GetSpatialRef()
@@ -434,17 +440,17 @@ if __name__ == '__main__':
     max = featCount * len(inRasters)
   else:
     max = featCount * bands
-  pb = progressBar( max + 1, 65 )
+  if not quiet: pb = progressBar( max + 1, 65 )
   i = 0
   start = time.time()
   # process points and rasters
   fi = 0
-  if create_CSV:
+  if create_csv:
     arExt=np.zeros((featCount,len(fileInfos)+1))
   for f in fileInfos:
     fi += 1
     i += 1
-    pb.update( i )
+    if not quiet: pb.update( i )
     gt = f.geotransform
     rasterCRS = f.projection
     #print "Layer", layerCRS.ExportToWkt()
@@ -464,7 +470,7 @@ if __name__ == '__main__':
       inFeat = inLayer.GetNextFeature()
       while inFeat is not None:
         i += 1
-        pb.update( i )
+        if not quiet: pb.update( i )
         geom = inFeat.GetGeometryRef()
         x = geom.GetX()
         y = geom.GetY()
@@ -481,7 +487,7 @@ if __name__ == '__main__':
             value = os.popen('gdallocationinfo -valonly -wgs84 %s %s %s' % (f.fileName, x, y)).read()
         else:
             value = band[ rY, rX ]
-        if create_CSV:
+        if create_csv:
           arExt[inFeat.GetFID(),0]=inFeat.GetFID()
           arExt[inFeat.GetFID(),fi]=value
         else:    
@@ -497,7 +503,7 @@ if __name__ == '__main__':
       inFeat = inLayer.GetNextFeature()
       while inFeat is not None:
         i += 1
-        pb.update( i )
+        if not quiet: pb.update( i )
         geom = inFeat.GetGeometryRef()
         x = geom.GetX()
         y = geom.GetY()
@@ -513,7 +519,7 @@ if __name__ == '__main__':
           #TODO: check that raster has CRS assigned
           values = os.popen('gdallocationinfo -valonly -wgs84 %s %s %s' % (f.fileName, x, y)).read().split('\n')
           for b in range( f.bands ):
-            if create_CSV:
+            if create_csv:
               arExt[inFeat.GetFID(),0]=inFeat.GetFID()
               arExt[inFeat.GetFID(),fi]=value
             else:
@@ -527,7 +533,7 @@ if __name__ == '__main__':
             band = rband.ReadAsArray()
             value = band[ rY, rX ]
             rband = None
-            if create_CSV:
+            if create_csv:
               arExt[inFeat.GetFID(),0]=inFeat.GetFID()
               arExt[inFeat.GetFID(),fi]=value
             else:
@@ -538,12 +544,11 @@ if __name__ == '__main__':
         inFeat = inLayer.GetNextFeature()
     ds = None
 
-  if create_CSV:
+  if create_csv:
     for r in range(featCount):
       extract_csv.write('\n')
       extract_csv.write(str(arExt[r,0])+';')
       for c in range(fi-1):
         extract_csv.write(arExt[r,c]+';')
       extract_csv.write(str(arExt[r,fi]))
-  print '\n'
-  print 'Completed in', time.time() - start, 'sec.'
+  if not quiet: print '\nCompleted in', time.time() - start, 'sec.'
