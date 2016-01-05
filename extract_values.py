@@ -40,7 +40,7 @@ import time
 import glob
 from itertools import cycle
 import math
-
+import numpy as np
 outFormat = 'ESRI Shapefile'
 
 def mapToPixel( mX, mY, geoTransform ):
@@ -150,9 +150,12 @@ def createFields( inLayer, infos ):
       fieldDef.SetWidth( 18 )
       fieldDef.SetPrecision( 8 )
       if fields_descript: fields_csv.write(i.fileBaseName + ';' + shortName + ';1' + '\n')
-      if inLayer.CreateField( fieldDef ) != 0:
-        print "Can't create field %s" % fieldDef.GetNameRef()
-        return False
+      if create_CSV:
+        extract_csv.write(';'+i.fileBaseName)
+      else:  
+        if inLayer.CreateField( fieldDef ) != 0:
+          print "Can't create field %s" % fieldDef.GetNameRef()
+          return False
     else:
       shortName = i.fileBaseName[ :8 ]
       for b in range( i.bands ):
@@ -160,9 +163,12 @@ def createFields( inLayer, infos ):
         fieldDef.SetWidth( 18 )
         fieldDef.SetPrecision( 8 )
         if fields_descript: fields_csv.write(i.fileBaseName + ';' + shortName  + str( b + 1 ) + ';' + str(b) + '\n')
-        if inLayer.CreateField( fieldDef ) != 0:
-          print "Can't create field %s" % fieldDef.GetNameRef()
-          return False
+        if create_CSV:
+          extract_csv.write(';'+i.fileBaseName + str(b))
+        else:  
+          if inLayer.CreateField( fieldDef ) != 0:
+            print "Can't create field %s" % fieldDef.GetNameRef()
+            return False
   return True
 
 # =============================================================================
@@ -317,6 +323,7 @@ if __name__ == '__main__':
   needTransform = False
   gdalalloc = False
   fields_descript = False
+  create_CSV = False
   rasterPaths2 = None
   
   gdal.AllRegister()
@@ -341,6 +348,8 @@ if __name__ == '__main__':
       gdalalloc = True
     elif arg == '-f':
       fields_descript = True
+    elif arg == '-c':
+      create_CSV = True  
     elif arg == '-rl':
         inRasters.extend( args[ i + 1].split(',') )
     elif arg == '-d':
@@ -369,7 +378,10 @@ if __name__ == '__main__':
   if fields_descript: 
     fields_csv = open(inShapeName.replace('.shp','_fields.csv'),'wb')
     fields_csv.write('RASTER;NEWFIELD;BAND\n')
-  
+
+  if create_CSV: 
+    extract_csv = open(inShapeName.replace('.shp','_extract.csv'),'wb')
+
   #-d is set
   if rasterPaths2 is not None:
     if ext is not None:
@@ -408,7 +420,9 @@ if __name__ == '__main__':
     layerDefinition = inLayer.GetLayerDefn()
     for i in range(layerDefinition.GetFieldCount()):
          fields_csv.write(layerDefinition.GetFieldDefn(i).GetName() + ';' + layerDefinition.GetFieldDefn(i).GetName() + ';1\n')
-    
+
+  if create_CSV:
+    extract_csv.write('FID')    
   featCount = inLayer.GetFeatureCount()
   layerCRS = inLayer.GetSpatialRef()
 
@@ -424,7 +438,11 @@ if __name__ == '__main__':
   i = 0
   start = time.time()
   # process points and rasters
+  fi = 0
+  if create_CSV:
+    arExt=np.zeros((featCount,len(fileInfos)+1))
   for f in fileInfos:
+    fi += 1
     i += 1
     pb.update( i )
     gt = f.geotransform
@@ -463,10 +481,14 @@ if __name__ == '__main__':
             value = os.popen('gdallocationinfo -valonly -wgs84 %s %s %s' % (f.fileName, x, y)).read()
         else:
             value = band[ rY, rX ]
-        inFeat.SetField( shortName, float(value) )
-        if inLayer.SetFeature( inFeat ) != 0:
-          print 'Failed to update feature.'
-          sys.exit( 1 )
+        if create_CSV:
+          arExt[inFeat.GetFID(),0]=inFeat.GetFID()
+          arExt[inFeat.GetFID(),fi]=value
+        else:    
+          inFeat.SetField( shortName, float(value) )
+          if inLayer.SetFeature( inFeat ) != 0:
+            print 'Failed to update feature.'
+            sys.exit( 1 )
 
         inFeat = inLayer.GetNextFeature()
     else:
@@ -491,19 +513,37 @@ if __name__ == '__main__':
           #TODO: check that raster has CRS assigned
           values = os.popen('gdallocationinfo -valonly -wgs84 %s %s %s' % (f.fileName, x, y)).read().split('\n')
           for b in range( f.bands ):
-              inFeat.SetField( shortName + str( b + 1 ), float(values[b]) )
-        else:
-            for b in range( f.bands ):
-              rband = ds.GetRasterBand( b + 1 )
-              band = rband.ReadAsArray()
-              value = band[ rY, rX ]
-              rband = None
+            if create_CSV:
+              arExt[inFeat.GetFID(),0]=inFeat.GetFID()
+              arExt[inFeat.GetFID(),fi]=value
+            else:
               inFeat.SetField( shortName + str( b + 1 ), float(value) )
-        if inLayer.SetFeature( inFeat ) != 0:
-          print 'Failed to update feature.'
-          sys.exit( 1 )
+              if inLayer.SetFeature( inFeat ) != 0:
+                print 'Failed to update feature.'
+                sys.exit( 1 )
+        else:
+          for b in range( f.bands ):
+            rband = ds.GetRasterBand( b + 1 )
+            band = rband.ReadAsArray()
+            value = band[ rY, rX ]
+            rband = None
+            if create_CSV:
+              arExt[inFeat.GetFID(),0]=inFeat.GetFID()
+              arExt[inFeat.GetFID(),fi]=value
+            else:
+              inFeat.SetField( shortName + str( b + 1 ), float(value) )
+              if inLayer.SetFeature( inFeat ) != 0:
+                print 'Failed to update feature.'
+                sys.exit( 1 )
         inFeat = inLayer.GetNextFeature()
     ds = None
 
+  if create_CSV:
+    for r in range(featCount):
+      extract_csv.write('\n')
+      extract_csv.write(str(arExt[r,0])+';')
+      for c in range(fi-1):
+        extract_csv.write(arExt[r,c]+';')
+      extract_csv.write(str(arExt[r,fi]))
   print '\n'
   print 'Completed in', time.time() - start, 'sec.'
