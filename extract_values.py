@@ -548,7 +548,7 @@ if __name__ == '__main__':
     for r in range(featCount):
       extract_csv.write('\n')
       extract_csv.write(str(arExt[r,0])+';')
-      for c in range(fi-1):
-        extract_csv.write(arExt[r,c]+';')
+      for c in range(1,fi):
+        extract_csv.write(str(arExt[r,c])+';')
       extract_csv.write(str(arExt[r,fi]))
   if not quiet: print '\nCompleted in', time.time() - start, 'sec.'
