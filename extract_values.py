@@ -518,6 +518,7 @@ if __name__ == '__main__':
         if gdalalloc:
           #TODO: check that raster has CRS assigned
           values = os.popen('gdallocationinfo -valonly -wgs84 %s %s %s' % (f.fileName, x, y)).read().split('\n')
+          values = [v.replace('.#IND', '') for v in values]
           for b in range( f.bands ):
             if create_csv:
               arExt[inFeat.GetFID(),0]=inFeat.GetFID()
