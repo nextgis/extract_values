@@ -521,9 +521,9 @@ if __name__ == '__main__':
           for b in range( f.bands ):
             if create_csv:
               arExt[inFeat.GetFID(),0]=inFeat.GetFID()
-              arExt[inFeat.GetFID(),fi]=value
+              arExt[inFeat.GetFID(),fi]=float(values[b])
             else:
-              inFeat.SetField( shortName + str( b + 1 ), float(value) )
+              inFeat.SetField( shortName + str( b + 1 ), float(values[b]) )
               if inLayer.SetFeature( inFeat ) != 0:
                 print 'Failed to update feature.'
                 sys.exit( 1 )
